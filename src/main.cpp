@@ -1,100 +1,147 @@
-/**
- * Include the Geode headers.
- */
 #include <Geode/Geode.hpp>
-
-/**
- * Brings cocos2d and all Geode namespaces to the current scope.
- */
 using namespace geode::prelude;
 
-/**
- * `$modify` lets you extend and modify GD's classes.
- * To hook a function in Geode, simply $modify the class
- * and write a new function definition with the signature of
- * the function you want to hook.
- *
- * Here we use the overloaded `$modify` macro to set our own class name,
- * so that we can use it for button callbacks.
- *
- * Notice the header being included, you *must* include the header for
- * the class you are modifying, or you will get a compile error.
- *
- * Another way you could do this is like this:
- *
- * struct MyMenuLayer : Modify<MyMenuLayer, MenuLayer> {};
- */
-#include <Geode/modify/MenuLayer.hpp>
-class $modify(MyMenuLayer, MenuLayer) {
-	/**
-	 * Typically classes in GD are initialized using the `init` function, (though not always!),
-	 * so here we use it to add our own button to the bottom menu.
-	 *
-	 * Note that for all hooks, your signature has to *match exactly*,
-	 * `void init()` would not place a hook!
-	*/
-	bool init() {
-		/**
-		 * We call the original init function so that the
-		 * original class is properly initialized.
-		 */
-		if (!MenuLayer::init()) {
-			return false;
-		}
+class JumpCounterNode : public CCNode {
+protected:
+    CCLabelBMFont* m_countLabel  = nullptr;
+    CCLabelBMFont* m_pbLabel     = nullptr;
+    int            m_jumps       = 0;
+    int            m_pb          = 0;
 
-		/**
-		 * You can use methods from the `geode::log` namespace to log messages to the console,
-		 * being useful for debugging and such. See this page for more info about logging:
-		 * https://docs.geode-sdk.org/tutorials/logging
-		*/
-		log::debug("Hello from my MenuLayer::init hook! This layer has {} children.", this->getChildrenCount());
+    bool init(int personalBest) {
+        if (!CCNode::init()) return false;
 
-		/**
-		 * See this page for more info about buttons
-		 * https://docs.geode-sdk.org/tutorials/buttons
-		*/
-		auto myButton = CCMenuItemSpriteExtra::create(
-			CCSprite::createWithSpriteFrameName("GJ_likeBtn_001.png"),
-			this,
-			/**
-			 * Here we use the name we set earlier for our modify class.
-			*/
-			menu_selector(MyMenuLayer::onMyButton)
-		);
+        m_pb = personalBest;
 
-		/**
-		 * Here we access the `bottom-menu` node by its ID, and add our button to it.
-		 * Node IDs are a Geode feature, see this page for more info about it:
-		 * https://docs.geode-sdk.org/tutorials/nodetree
-		*/
-		auto menu = this->getChildByID("bottom-menu");
-		menu->addChild(myButton);
+        auto bg = CCScale9Sprite::create("square02_001.png");
+        bg->setContentSize({ 140.f, 46.f });
+        bg->setOpacity(140);
+        bg->setColor({ 0, 0, 0 });
+        bg->setPosition({ 70.f, 23.f });
+        this->addChild(bg, 0);
 
-		/**
-		 * The `_spr` string literal operator just prefixes the string with
-		 * your mod id followed by a slash. This is good practice for setting your own node ids.
-		*/
-		myButton->setID("my-button"_spr);
+        m_countLabel = CCLabelBMFont::create("0", "bigFont.fnt");
+        m_countLabel->setScale(0.55f);
+        m_countLabel->setPosition({ 70.f, 30.f });
+        this->addChild(m_countLabel, 1);
 
-		/**
-		 * We update the layout of the menu to ensure that our button is properly placed.
-		 * This is yet another Geode feature, see this page for more info about it:
-		 * https://docs.geode-sdk.org/tutorials/layouts
-		*/
-		menu->updateLayout();
+        m_pbLabel = CCLabelBMFont::create("PB: 0", "goldFont.fnt");
+        m_pbLabel->setScale(0.32f);
+        m_pbLabel->setPosition({ 70.f, 12.f });
+        this->addChild(m_pbLabel, 1);
 
-		/**
-		 * We return `true` to indicate that the class was properly initialized.
-		 */
-		return true;
-	}
+        this->setContentSize({ 140.f, 46.f });
+        refreshDisplay();
+        return true;
+    }
 
-	/**
-	 * This is the callback function for the button we created earlier.
-	 * The signature for button callbacks must always be the same,
-	 * return type `void` and taking a `CCObject*`.
-	*/
-	void onMyButton(CCObject*) {
-		FLAlertLayer::create("Geode", "Hello from my custom mod!", "OK")->show();
-	}
+public:
+    static JumpCounterNode* create(int personalBest) {
+        auto ret = new JumpCounterNode();
+        if (ret->initWithPersonalBest(personalBest)) {
+            ret->autorelease();
+            return ret;
+        }
+        delete ret;
+        return nullptr;
+    }
+
+    bool initWithPersonalBest(int pb) { return init(pb); }
+
+    void addJump() {
+        ++m_jumps;
+        refreshDisplay();
+    }
+
+    int getJumps() const { return m_jumps; }
+
+    bool finalizePB() {
+        if (m_jumps > m_pb) {
+            m_pb = m_jumps;
+            return true;
+        }
+        return false;
+    }
+
+    int getPB() const { return m_pb; }
+
+private:
+    void refreshDisplay() {
+        ccColor3B color = { 255, 255, 255 };
+        if (m_pb > 0) {
+            float ratio = static_cast<float>(m_jumps) / static_cast<float>(m_pb);
+            if (ratio >= 1.0f) {
+                color = { 255, 80, 80 };
+            } else if (ratio >= 0.8f) {
+                color = { 255, 220, 60 };
+            }
+        }
+
+        auto text = std::to_string(m_jumps);
+        m_countLabel->setString(text.c_str());
+        m_countLabel->setColor(color);
+
+        auto pbText = "PB: " + std::to_string(m_pb);
+        m_pbLabel->setString(pbText.c_str());
+    }
+};
+
+class $modify(JCPlayLayer, PlayLayer) {
+    struct Fields {
+        JumpCounterNode* m_hud = nullptr;
+    };
+
+    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+
+        if (!Mod::get()->getSettingValue<bool>("enabled")) return true;
+
+        int savedPB = Mod::get()->getSavedValue<int64_t>(
+            "pb-" + std::to_string(level->m_levelID.value()), 0
+        );
+
+        auto hud = JumpCounterNode::create(static_cast<int>(savedPB));
+        if (!hud) return true;
+
+        m_fields->m_hud = hud;
+
+        CCSize screen = CCDirector::sharedDirector()->getWinSize();
+        hud->setPosition({ 8.f, 8.f });
+
+        this->addChild(hud, 100);
+
+        return true;
+    }
+
+    void pushButton(int button, bool player1) {
+        PlayLayer::pushButton(button, player1);
+        if (button == 1 && player1 && m_fields->m_hud) {
+            m_fields->m_hud->addJump();
+        }
+    }
+
+    void levelComplete() {
+        PlayLayer::levelComplete();
+        savePB();
+    }
+
+
+    void destroyPlayer(PlayerObject* player, GameObject* object) {
+        PlayLayer::destroyPlayer(player, object);
+        savePB();
+    }
+
+private:
+    void savePB() {
+        auto hud = m_fields->m_hud;
+        if (!hud) return;
+
+        bool isNew = hud->finalizePB();
+        if (isNew) {
+            int64_t pb = static_cast<int64_t>(hud->getPB());
+            auto key = "pb-" + std::to_string(m_level->m_levelID.value());
+            Mod::get()->setSavedValue<int64_t>(key, pb);
+            log::info("[JumpCounter] New PB: {} jumps", pb);
+        }
+    }
 };
